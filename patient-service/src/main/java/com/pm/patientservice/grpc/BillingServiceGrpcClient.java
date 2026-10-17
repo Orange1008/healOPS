@@ -36,8 +36,13 @@ public class BillingServiceGrpcClient {
     BillingRequest request = BillingRequest.newBuilder().setPatientId(patientId)
         .setName(name).setEmail(email).build();
 
-    BillingResponse response = blockingStub.createBillingAccount(request);
-    log.info("Received response from billing service via GRPC: {}", response);
-    return response;
+    try {
+      BillingResponse response = blockingStub.createBillingAccount(request);
+      log.info("Received response from billing service via GRPC: {}", response);
+      return response;
+    } catch (Exception e) {
+      log.warn("Billing service GRPC unavailable for patient {}. Proceeding with graceful fallback: {}", patientId, e.getMessage());
+      return null;
+    }
   }
 }
