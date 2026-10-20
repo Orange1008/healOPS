@@ -15,8 +15,8 @@ public class ServiceMetric {
     @JoinColumn(name = "service_id", nullable = false)
     private MonitoredService service;
 
-    private double cpuPercent;
-    private double memoryMb;
+    private Double cpuPercent;
+    private Double memoryMb;
     private long responseTimeMs;
     private double errorRatePercent;
     private boolean dbUp = true;
@@ -26,7 +26,7 @@ public class ServiceMetric {
 
     public ServiceMetric() {}
 
-    public ServiceMetric(MonitoredService service, double cpuPercent, double memoryMb, long responseTimeMs, double errorRatePercent, boolean dbUp, String containerStatus) {
+    public ServiceMetric(MonitoredService service, Double cpuPercent, Double memoryMb, long responseTimeMs, double errorRatePercent, boolean dbUp, String containerStatus) {
         this.service = service;
         this.cpuPercent = cpuPercent;
         this.memoryMb = memoryMb;
@@ -41,11 +41,11 @@ public class ServiceMetric {
     public MonitoredService getService() { return service; }
     public void setService(MonitoredService service) { this.service = service; }
 
-    public double getCpuPercent() { return cpuPercent; }
-    public void setCpuPercent(double cpuPercent) { this.cpuPercent = cpuPercent; }
+    public Double getCpuPercent() { return cpuPercent; }
+    public void setCpuPercent(Double cpuPercent) { this.cpuPercent = cpuPercent; }
 
-    public double getMemoryMb() { return memoryMb; }
-    public void setMemoryMb(double memoryMb) { this.memoryMb = memoryMb; }
+    public Double getMemoryMb() { return memoryMb; }
+    public void setMemoryMb(Double memoryMb) { this.memoryMb = memoryMb; }
 
     public long getResponseTimeMs() { return responseTimeMs; }
     public void setResponseTimeMs(long responseTimeMs) { this.responseTimeMs = responseTimeMs; }

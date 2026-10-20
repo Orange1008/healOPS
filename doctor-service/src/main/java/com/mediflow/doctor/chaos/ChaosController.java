@@ -2,14 +2,12 @@ package com.mediflow.doctor.chaos;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import javax.sql.DataSource;
-import java.sql.Connection;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @RestController
 @RequestMapping("/chaos")
@@ -18,20 +16,21 @@ public class ChaosController {
     private static final Logger log = LoggerFactory.getLogger(ChaosController.class);
 
     private final AtomicBoolean cpuBurnActive = new AtomicBoolean(false);
-    private final List<byte[]> memoryLeakSink = Collections.synchronizedList(new ArrayList<>());
+    private final AtomicInteger simulatedMemoryMB = new AtomicInteger();
     private volatile long injectedLatencyMs = 0;
     private final AtomicBoolean return500Active = new AtomicBoolean(false);
-
-    @Autowired(required = false)
-    private DataSource dataSource;
+    private final AtomicBoolean databaseLostActive = new AtomicBoolean(false);
+    private final AtomicBoolean serviceCrashActive = new AtomicBoolean(false);
 
     @GetMapping("/status")
     public ResponseEntity<Map<String, Object>> getChaosStatus() {
         Map<String, Object> status = new HashMap<>();
         status.put("cpuBurnActive", cpuBurnActive.get());
-        status.put("leakedMemoryMB", (memoryLeakSink.size() * 50));
+        status.put("leakedMemoryMB", simulatedMemoryMB.get());
         status.put("injectedLatencyMs", injectedLatencyMs);
         status.put("return500Active", return500Active.get());
+        status.put("databaseLostActive", databaseLostActive.get());
+        status.put("serviceCrashActive", serviceCrashActive.get());
         return ResponseEntity.ok(status);
     }
 
@@ -55,15 +54,9 @@ public class ChaosController {
     @PostMapping("/memory")
     public ResponseEntity<Map<String, Object>> triggerMemoryLeak(@RequestParam(defaultValue = "100") int mb) {
         log.warn("🔥 [Chaos] Injecting {} MB into memory leak sink", mb);
-        try {
-            int chunks = mb / 10;
-            for (int i = 0; i < chunks; i++) {
-                memoryLeakSink.add(new byte[10 * 1024 * 1024]);
-            }
-        } catch (OutOfMemoryError e) {
-            log.error("💥 [Chaos] OOM Error hit!");
-        }
-        return ResponseEntity.ok(Map.of("message", "Leaked " + mb + " MB", "currentLeakMB", memoryLeakSink.size() * 10));
+        int safeAmount = Math.max(0, Math.min(mb, 512));
+        simulatedMemoryMB.set(safeAmount);
+        return ResponseEntity.ok(Map.of("message", "Simulated " + safeAmount + " MB of memory pressure", "currentLeakMB", safeAmount));
     }
 
     @PostMapping("/latency")
@@ -83,38 +76,33 @@ public class ChaosController {
     @PostMapping("/db-disconnect")
     public ResponseEntity<Map<String, String>> triggerDbDisconnect() {
         log.warn("🔥 [Chaos] Simulating Database Pool Disconnect");
-        try {
-            if (dataSource != null) {
-                try (Connection conn = dataSource.getConnection()) {
-                    conn.close();
-                }
-            }
-            return ResponseEntity.ok(Map.of("message", "Database pool eviction simulated"));
-        } catch (Exception e) {
-            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
-        }
+        databaseLostActive.set(true);
+        return ResponseEntity.ok(Map.of("message", "Doctor database access is now simulated as unavailable"));
     }
 
     @PostMapping("/crash")
     public ResponseEntity<Map<String, String>> triggerCrash() {
-        log.warn("💥 [Chaos] Crashing JVM process in 1 second!");
-        new Thread(() -> {
-            try {
-                Thread.sleep(1000);
-                System.exit(1);
-            } catch (Exception ignored) {}
-        }).start();
-        return ResponseEntity.ok(Map.of("message", "Process crash initiated. Service terminating."));
+        log.warn("💥 [Chaos] Simulating doctor service outage; HealOps reset can restore it");
+        serviceCrashActive.set(true);
+        return ResponseEntity.ok(Map.of("message", "Doctor service outage simulation enabled"));
     }
 
     @PostMapping("/reset")
     public ResponseEntity<Map<String, String>> resetChaos() {
         log.info("🛡️ [Chaos] Resetting all simulated chaos faults");
         cpuBurnActive.set(false);
-        memoryLeakSink.clear();
+        simulatedMemoryMB.set(0);
         injectedLatencyMs = 0;
         return500Active.set(false);
-        System.gc();
+        databaseLostActive.set(false);
+        serviceCrashActive.set(false);
         return ResponseEntity.ok(Map.of("message", "All chaos faults cleared. Service healthy."));
     }
+
+    public boolean isCpuBurnActive() { return cpuBurnActive.get(); }
+    public boolean isMemoryPressureActive() { return simulatedMemoryMB.get() > 0; }
+    public boolean isDatabaseLostActive() { return databaseLostActive.get(); }
+    public boolean isServiceCrashActive() { return serviceCrashActive.get(); }
+    public boolean isReturn500Active() { return return500Active.get(); }
+    public long getInjectedLatencyMs() { return injectedLatencyMs; }
 }

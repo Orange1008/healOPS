@@ -32,6 +32,9 @@ public class MonitoredService {
     // Supported recovery actions e.g. "CLEAR_CHAOS,RECONNECT_DB_POOL,RESTART_CONTAINER"
     private String supportedRemedies;
 
+    // Faults that the target service actually exposes through its chaos API.
+    private String supportedFaults;
+
     @Enumerated(EnumType.STRING)
     private ServiceStatus currentStatus = ServiceStatus.HEALTHY;
 
@@ -40,6 +43,9 @@ public class MonitoredService {
     private boolean enabled = true;
 
     private LocalDateTime lastPolledAt;
+
+    @Transient
+    private Long lastResponseTimeMs;
 
     public MonitoredService() {}
 
@@ -86,6 +92,9 @@ public class MonitoredService {
     public String getSupportedRemedies() { return supportedRemedies; }
     public void setSupportedRemedies(String supportedRemedies) { this.supportedRemedies = supportedRemedies; }
 
+    public String getSupportedFaults() { return supportedFaults; }
+    public void setSupportedFaults(String supportedFaults) { this.supportedFaults = supportedFaults; }
+
     public ServiceStatus getCurrentStatus() { return currentStatus; }
     public void setCurrentStatus(ServiceStatus currentStatus) { this.currentStatus = currentStatus; }
 
@@ -97,4 +106,6 @@ public class MonitoredService {
 
     public LocalDateTime getLastPolledAt() { return lastPolledAt; }
     public void setLastPolledAt(LocalDateTime lastPolledAt) { this.lastPolledAt = lastPolledAt; }
+    public Long getLastResponseTimeMs() { return lastResponseTimeMs; }
+    public void setLastResponseTimeMs(Long lastResponseTimeMs) { this.lastResponseTimeMs = lastResponseTimeMs; }
 }

@@ -9,5 +9,6 @@ import java.util.List;
 
 public interface PolicyRepository extends JpaRepository<Policy, Long> {
     List<Policy> findByFailureTypeAndEnabledTrueOrderByStepNumberAsc(FailureType failureType);
+    boolean existsByFailureType(FailureType failureType);
     List<Policy> findAllByOrderByFailureTypeAscStepNumberAsc();
 }

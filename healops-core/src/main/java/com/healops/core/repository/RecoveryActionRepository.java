@@ -8,4 +8,6 @@ import java.util.List;
 
 public interface RecoveryActionRepository extends JpaRepository<RecoveryAction, Long> {
     List<RecoveryAction> findByIncidentIdOrderByStepNumberAsc(Long incidentId);
+    List<RecoveryAction> findAllByOrderByStartedAtDesc();
+    List<RecoveryAction> findTop100ByOrderByStartedAtDesc();
 }

@@ -24,6 +24,7 @@ public class Incident {
     // Explainable Recommendation Fields
     private String issueDescription;
     private String recommendedAction;
+    @Column(length = 1024)
     private String decisionReason;
     private Long estimatedMttrMs;
 

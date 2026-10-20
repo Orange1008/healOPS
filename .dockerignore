@@ -1,0 +1,26 @@
+# Git and editor files
+.git
+.gitignore
+.gitattributes
+.vscode
+.idea
+*.iml
+
+# Build outputs
+**/target
+**/node_modules
+**/dist
+**/.mvn
+
+# Local/runtime files
+.env
+.env.*
+!.env.example
+*.log
+coverage
+.DS_Store
+Thumbs.db
+
+# Docker artifacts
+Dockerfile*
+docker-compose*.yml

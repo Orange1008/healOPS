@@ -8,6 +8,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import java.util.List;
+import java.util.Arrays;
+import java.util.Set;
 
 @Configuration
 public class DataInitializer {
@@ -37,20 +39,7 @@ public class DataInitializer {
                         "CLEAR_CHAOS,RECONNECT_DB_POOL,RESTART_CONTAINER"
                 ));
 
-                // 2. Billing Service
-                serviceRepo.save(new MonitoredService(
-                        "billing-service",
-                        ServiceCategory.INTERNAL_MICROSERVICE,
-                        getUrl.apply("billing-service", 4001) + "/actuator/health",
-                        getUrl.apply("billing-service", 4001) + "/actuator/metrics",
-                        getUrl.apply("billing-service", 4001) + "/chaos",
-                        "billing-service",
-                        4001,
-                        "patient-service,auth-service",
-                        "CLEAR_CHAOS,RECONNECT_DB_POOL,RESTART_CONTAINER"
-                ));
-
-                // 3. Auth Service
+                // Auth Service has monitoring only; it does not expose fault injection endpoints.
                 serviceRepo.save(new MonitoredService(
                         "auth-service",
                         ServiceCategory.INTERNAL_MICROSERVICE,
@@ -63,82 +52,17 @@ public class DataInitializer {
                         "RESTART_CONTAINER"
                 ));
 
-                // 4. Doctor Service
+                // Clinical domain consolidates doctors, appointments, laboratory, pharmacy, and inventory.
                 serviceRepo.save(new MonitoredService(
-                        "doctor-service",
+                        "clinical-service",
                         ServiceCategory.INTERNAL_MICROSERVICE,
-                        getUrl.apply("doctor-service", 4002) + "/actuator/health",
-                        getUrl.apply("doctor-service", 4002) + "/actuator/metrics",
-                        getUrl.apply("doctor-service", 4002) + "/chaos",
-                        "doctor-service",
+                        getUrl.apply("clinical-service", 4002) + "/actuator/health",
+                        getUrl.apply("clinical-service", 4002) + "/actuator/metrics",
+                        getUrl.apply("clinical-service", 4002) + "/chaos",
+                        "clinical-service",
                         4002,
-                        "auth-service",
+                        "auth-service,patient-service",
                         "CLEAR_CHAOS,RECONNECT_DB_POOL,RESTART_CONTAINER"
-                ));
-
-                // 5. Appointment Service
-                serviceRepo.save(new MonitoredService(
-                        "appointment-service",
-                        ServiceCategory.INTERNAL_MICROSERVICE,
-                        getUrl.apply("appointment-service", 4003) + "/actuator/health",
-                        getUrl.apply("appointment-service", 4003) + "/actuator/metrics",
-                        getUrl.apply("appointment-service", 4003) + "/chaos",
-                        "appointment-service",
-                        4003,
-                        "doctor-service,patient-service",
-                        "CLEAR_CHAOS,RECONNECT_DB_POOL,RESTART_CONTAINER"
-                ));
-
-                // 6. Inventory Service
-                serviceRepo.save(new MonitoredService(
-                        "inventory-service",
-                        ServiceCategory.INTERNAL_MICROSERVICE,
-                        getUrl.apply("inventory-service", 4004) + "/actuator/health",
-                        getUrl.apply("inventory-service", 4004) + "/actuator/metrics",
-                        getUrl.apply("inventory-service", 4004) + "/chaos",
-                        "inventory-service",
-                        4004,
-                        "auth-service",
-                        "CLEAR_CHAOS,RECONNECT_DB_POOL,RESTART_CONTAINER"
-                ));
-
-                // 7. Pharmacy Service
-                serviceRepo.save(new MonitoredService(
-                        "pharmacy-service",
-                        ServiceCategory.INTERNAL_MICROSERVICE,
-                        getUrl.apply("pharmacy-service", 4006) + "/actuator/health",
-                        getUrl.apply("pharmacy-service", 4006) + "/actuator/metrics",
-                        getUrl.apply("pharmacy-service", 4006) + "/chaos",
-                        "pharmacy-service",
-                        4006,
-                        "inventory-service,patient-service",
-                        "CLEAR_CHAOS,RECONNECT_DB_POOL,RESTART_CONTAINER"
-                ));
-
-                // 8. Laboratory Service
-                serviceRepo.save(new MonitoredService(
-                        "laboratory-service",
-                        ServiceCategory.INTERNAL_MICROSERVICE,
-                        getUrl.apply("laboratory-service", 4007) + "/actuator/health",
-                        getUrl.apply("laboratory-service", 4007) + "/actuator/metrics",
-                        getUrl.apply("laboratory-service", 4007) + "/chaos",
-                        "laboratory-service",
-                        4007,
-                        "patient-service,doctor-service",
-                        "CLEAR_CHAOS,RECONNECT_DB_POOL,RESTART_CONTAINER"
-                ));
-
-                // 9. Notification Service
-                serviceRepo.save(new MonitoredService(
-                        "notification-service",
-                        ServiceCategory.INTERNAL_MICROSERVICE,
-                        getUrl.apply("notification-service", 4008) + "/actuator/health",
-                        getUrl.apply("notification-service", 4008) + "/actuator/metrics",
-                        getUrl.apply("notification-service", 4008) + "/chaos",
-                        "notification-service",
-                        4008,
-                        "",
-                        "CLEAR_CHAOS,RESTART_CONTAINER"
                 ));
 
                 // 10. API Gateway
@@ -150,23 +74,44 @@ public class DataInitializer {
                         null,
                         "api-gateway",
                         8080,
-                        "auth-service,patient-service,doctor-service,billing-service",
+                        "auth-service,patient-service,clinical-service",
                         "RESTART_CONTAINER"
                 ));
 
-                // Seed External APIs
-                serviceRepo.save(new MonitoredService(
-                        "Google DNS & Gateway",
-                        ServiceCategory.EXTERNAL_API,
-                        "https://www.google.com",
-                        null,
-                        null,
-                        null,
-                        443,
-                        "",
-                        "NOTIFY_ADMIN"
-                ));
             }
+
+            // Keep fault controls tied to endpoints implemented by each running service.
+            serviceRepo.findByName("patient-service").ifPresent(service -> {
+                service.setSupportedFaults("HIGH_CPU,HIGH_MEMORY,DATABASE_LOST,SLOW_RESPONSE,HTTP_5XX_ERRORS,SERVICE_CRASH");
+                serviceRepo.save(service);
+            });
+            serviceRepo.findByName("clinical-service").ifPresent(service -> {
+                service.setSupportedFaults("HIGH_CPU,HIGH_MEMORY,DATABASE_LOST,SLOW_RESPONSE,HTTP_5XX_ERRORS,SERVICE_CRASH");
+                serviceRepo.save(service);
+            });
+            serviceRepo.findByName("auth-service").ifPresent(service -> {
+                service.setSupportedFaults("");
+                serviceRepo.save(service);
+            });
+            serviceRepo.findByName("api-gateway").ifPresent(service -> {
+                service.setSupportedFaults("");
+                serviceRepo.save(service);
+            });
+            serviceRepo.flush();
+
+            Set<String> optionalServices = Set.of("billing-service", "notification-service");
+            Set<String> enabledOptionalServices = Arrays.stream(
+                            System.getenv().getOrDefault("HEALOPS_ENABLED_OPTIONAL_SERVICES", "").split(","))
+                    .map(String::trim)
+                    .filter(name -> !name.isEmpty())
+                    .collect(java.util.stream.Collectors.toSet());
+            List<MonitoredService> optionalServiceRecords = serviceRepo.findAll().stream()
+                    .filter(service -> optionalServices.contains(service.getName()))
+                    .toList();
+            optionalServiceRecords.forEach(service ->
+                    service.setEnabled(enabledOptionalServices.contains(service.getName())));
+            serviceRepo.saveAll(optionalServiceRecords);
+            serviceRepo.flush();
 
             // Seed Default Escalation Policies
             if (policyRepo.count() == 0) {
@@ -184,9 +129,20 @@ public class DataInitializer {
                         new Policy(FailureType.SLOW_RESPONSE, 1, "CLEAR_CHAOS", 3, 60),
                         new Policy(FailureType.SLOW_RESPONSE, 2, "RESTART_SERVICE", 2, 120),
 
+                        new Policy(FailureType.HTTP_5XX_ERRORS, 1, "CLEAR_CHAOS", 3, 60),
+                        new Policy(FailureType.HTTP_5XX_ERRORS, 2, "RESTART_CONTAINER", 1, 120),
+
                         new Policy(FailureType.SERVICE_CRASH, 1, "RESTART_CONTAINER", 3, 120),
                         new Policy(FailureType.CONTAINER_STOPPED, 1, "RESTART_CONTAINER", 3, 120),
                         new Policy(FailureType.NETWORK_TIMEOUT, 1, "RESTART_CONTAINER", 2, 120)
+                ));
+            }
+            // Existing persistent databases may already contain the original
+            // policy set, so add the newer 5xx policy without resetting history.
+            if (!policyRepo.existsByFailureType(FailureType.HTTP_5XX_ERRORS)) {
+                policyRepo.saveAll(List.of(
+                        new Policy(FailureType.HTTP_5XX_ERRORS, 1, "CLEAR_CHAOS", 3, 60),
+                        new Policy(FailureType.HTTP_5XX_ERRORS, 2, "RESTART_CONTAINER", 1, 120)
                 ));
             }
         };

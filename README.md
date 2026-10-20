@@ -1,299 +1,249 @@
-# HealOPS & MediFlow — Autonomous Self-Healing Healthcare Microservices Platform
+# HealOps + MediFlow
 
-[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.x-brightgreen.svg)](https://spring.io/projects/spring-boot)
-[![Java](https://img.shields.io/badge/Java-21-orange.svg)](https://openjdk.org/)
-[![React](https://img.shields.io/badge/Frontend-React%20%2B%20Vite-blue.svg)](https://vitejs.dev/)
-[![Architecture](https://img.shields.io/badge/Architecture-Microservices%20%2B%20MAPE--K-purple.svg)]()
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+**HealOps + MediFlow** is a local, multi-service healthcare demo paired with a small operations control plane. MediFlow demonstrates patient and clinical workflows. HealOps monitors configured services, records incidents, applies a limited set of policy-based actions to managed Docker containers, and verifies recovery with later health checks. External websites are monitored for HTTP availability only and are never automatically restarted.
 
-**HealOPS** is an intelligent, autonomous self-healing platform and observability suite designed to guarantee zero-downtime high availability for **MediFlow**, a mission-critical distributed hospital management microservices fleet.
+> **Project scope:** This repository is an educational engineering project. It is not a production EHR, a regulatory/compliance certification, or a replacement for Kubernetes or enterprise observability platforms. The source implements bounded rules and actions; it does not implement machine-learning diagnosis or guarantee zero downtime.
 
-By implementing the autonomic computing **MAPE-K (Monitor-Analyze-Plan-Execute over Knowledge)** closed-loop control model, HealOPS continuously monitors distributed services, detects operational anomalies (CPU spikes, memory exhaustion, database outages, SLA latency breaches, and HTTP 5xx errors), and autonomously triggers multi-tier remediation actions before outages impact patients or healthcare personnel.
+## What it does
 
----
+### MediFlow
 
-## 📑 Table of Contents
-- [Key Features](#-key-features)
-- [System Architecture](#-system-architecture)
-- [The MAPE-K Self-Healing Engine](#-the-mape-k-self-healing-engine)
-- [Microservices Fleet & Port Matrix](#-microservices-fleet--port-matrix)
-- [Failure Detection & Remediation Matrix](#-failure-detection--remediation-matrix)
-- [Chaos Engineering Subsystem](#-chaos-engineering-subsystem)
-- [Technology Stack](#-technology-stack)
-- [Getting Started & Installation](#-getting-started--installation)
-- [REST API Reference](#-rest-api-reference)
-- [Live Demonstration Workflow](#-live-demonstration-workflow)
-- [Author & License](#-author--license)
+- React browser application for patient, doctor, and appointment views, with additional clinical controls in the UI.
+- Auth Service verifies credentials with BCrypt and issues a signed JWT.
+- API Gateway routes requests; its configured JWT validation filter protects Patient API routes.
+- Patient Service persists patient records and supports CRUD operations.
+- Clinical Service consolidates doctor, appointment, inventory, laboratory, and pharmacy APIs in the default Docker Compose stack.
+- Optional Patient integrations include gRPC to Billing and Kafka event publishing; those paths are not all active in the default stack.
 
----
+### HealOps
 
-## 🌟 Key Features
+- Schedules HTTP health probes for registered managed services and external targets.
+- Stores service metrics, incidents, policies, operational events, and recovery-action history in its configured H2 database.
+- Uses a three-sample status window and configured failure thresholds to classify target health.
+- Selects enabled recovery steps by failure type, retry limits, and cooldown settings.
+- Requests selected lifecycle actions through a restricted Docker-control proxy, then checks the service again before closing an incident.
+- Treats external targets as **Monitor Only**: it records HTTP availability/latency and INFO incidents, but does not invoke container recovery.
+- Serves an operations dashboard using REST polling and Server-Sent Events (SSE).
 
-1. **MAPE-K Autonomous Closed Loop**:
-   - Polling health and telemetry probes every 5 seconds.
-   - Sliding-window evaluation (3 consecutive breach samples) to prevent flapping and false positives.
-   - Automated root-cause correlation and explainable remediation recommendations.
+The health score is a status indicator, not an SLA or measured uptime percentage. HealOps currently samples selected health, process CPU, and JVM heap signals; it does not include Hikari pool gauges in its health-score sampler.
 
-2. **Multi-Tier Escalation Policies**:
-   - Hierarchical policy engine with configurable retries, cooldown thresholds (15s minimum), and automated escalation:
-     `Clear Fault / Reset` ➔ `Memory GC / DB Pool Refresh` ➔ `Service Restart` ➔ `Container Restart` ➔ `On-Call Alert`.
-
-3. **Chaos Engineering & Fault Injection**:
-   - Built-in `/chaos` endpoints across every microservice to simulate real-world production incidents on-demand (CPU burn, memory leaks, latency injection, DB disconnects, and 500 errors).
-
-4. **Real-Time Telemetry & Event Streaming**:
-   - Zero-polling Server-Sent Events (`SSE`) streaming live metrics, incident events, and recovery logs directly to the browser.
-
-5. **Dual Interactive Dashboards**:
-   - **HealOps Dashboard (Port 8090)**: Central SRE command center featuring real-time health scorecards, live latency & CPU sparklines, incident timeline, policy editor, and one-click chaos simulator.
-   - **MediFlow Hospital Portal (Port 3001)**: Fully functional healthcare clinical portal for managing patients, doctor appointments, billing invoices, pharmacy prescriptions, and lab reports.
-
-6. **Polyglot Communication**:
-   - RESTful JSON APIs, gRPC binary protocols for high-throughput inter-service RPC (Patient ➔ Billing), and Apache Kafka asynchronous event streaming.
-
----
-
-## 🏛 System Architecture
-
-```mermaid
-flowchart TB
-    subgraph UI ["Client Presentation Layer"]
-        HOD["HealOps SRE Dashboard (Port 8090)<br/>React + Vite + SSE"]
-        MFW["MediFlow Hospital Portal (Port 3001)<br/>React Patient & Doctor Suite"]
-    end
-
-    subgraph CORE ["HealOPS Autonomous Control Plane (:8090)"]
-        SSE["SSE Event Broadcaster"]
-        MAPE["MAPE-K Engine (5s Closed Loop)"]
-        POL["Policy & Escalation Engine"]
-        ORCH["Orchestrator & Recovery Service"]
-        H2DB[("HealOps Knowledge Base<br/>H2 Metrics & Incident DB")]
-    end
-
-    subgraph FLEET ["MediFlow Hospital Microservices Fleet"]
-        GW["API Gateway (:8080)"]
-        AUTH["Auth Service (:4005)"]
-        PAT["Patient Service (:4000)"]
-        BILL["Billing Service (:4001)"]
-        DOC["Doctor Service (:4002)"]
-        APP["Appointment Service (:4003)"]
-        INV["Inventory Service (:4004)"]
-        PHARM["Pharmacy Service (:4006)"]
-        LAB["Laboratory Service (:4007)"]
-        NOTIF["Notification Service (:4008)"]
-    end
-
-    HOD <-->|SSE Stream & REST| CORE
-    MFW <-->|REST API| FLEET
-
-    MAPE -->|1. Monitor Probes| FLEET
-    MAPE <-->|2. Analyze & Plan| POL
-    MAPE -->|Store History| H2DB
-    MAPE -->|3. Execute Recovery| ORCH
-    ORCH -->|Remediation Dispatch| FLEET
-    CORE -->|Broadcast Updates| SSE
-```
-
----
-
-## 🔄 The MAPE-K Self-Healing Engine
-
-HealOPS strictly follows the IBM MAPE-K autonomic control loop:
+## Architecture
 
 ```mermaid
 flowchart LR
-    M["1. Monitor<br/>Poll health & metrics (5s)"] --> A["2. Analyze<br/>Evaluate 3-sample sliding window"]
-    A --> P["3. Plan<br/>Match failure to recovery policy"]
-    P --> E["4. Execute<br/>Dispatch remediation action"]
-    E --> M
-
-    subgraph Knowledge ["Shared Knowledge Base"]
-        K1["Service Registry"]
-        K2["Metric History"]
-        K3["Escalation Policies"]
-        K4["Incident Records"]
-    end
-
-    M <--> Knowledge
-    A <--> Knowledge
-    P <--> Knowledge
-    E <--> Knowledge
+  Browser[Browser]
+  subgraph Compose[Docker Compose]
+    Web[MediFlow Web / Nginx]
+    Dashboard[HealOps Dashboard / Nginx]
+    Gateway[API Gateway]
+    Auth[Auth Service]
+    Patient[Patient Service]
+    Clinical[Clinical Service]
+    Core[HealOps Core]
+    Control[Restricted Docker Control Proxy]
+    Docker[Docker Engine]
+    Web -->|/auth and /api| Gateway
+    Web -->|/healops| Core
+    Dashboard -->|/api and SSE| Core
+    Gateway --> Auth
+    Gateway --> Patient
+    Gateway --> Clinical
+    Core -->|health and metrics| Auth
+    Core -->|health and metrics| Patient
+    Core -->|health and metrics| Clinical
+    Core -->|allowlisted lifecycle calls| Control
+    Control --> Docker
+  end
+  Browser -->|localhost:3001| Web
+  Browser -->|localhost:8091| Dashboard
+  External[External websites] -->|HTTP monitoring only| Core
 ```
 
-1. **Monitor**: Every 5 seconds, `SelfHealingEngine` probes Spring Boot Actuator endpoints (`/actuator/health`, `/actuator/metrics`) and `/chaos/status` across all registered microservices.
-2. **Analyze**: Samples are buffered in an in-memory sliding window of 3 intervals. A breach is only declared when persistent failures exceed safety thresholds, avoiding noisy false alarms.
-3. **Plan**: When an incident is flagged, the policy engine matches the specific `FailureType` to the most cost-effective recovery strategy with calculated Mean-Time-To-Detect (MTTD) and estimated Mean-Time-To-Recover (MTTR).
-4. **Execute**: `OrchestratorService` dispatches the resolution command (clearing chaos thread pools, invoking JVM garbage collection, cycling HikariCP database connection pools, or restarting the process/container).
-5. **Knowledge**: Telemetry, actions taken, and resolution timestamps are recorded in the relational knowledge repository for post-mortem auditing.
+### Login and patient request
 
----
+1. The browser posts credentials to `/auth/login` through MediFlow Nginx and the API Gateway.
+2. Auth looks up the user, verifies the password hash, and returns a JWT when valid.
+3. The browser sends the JWT as a Bearer token to `/api/patients`.
+4. Gateway validates the token with Auth before forwarding the Patient request.
+5. Patient Service reads or writes its own database and returns the API response.
 
-## 🏥 Microservices Fleet & Port Matrix
+### HealOps recovery loop
 
-| Service | Port | Technology | Responsibilities | Key Dependencies |
-| :--- | :--- | :--- | :--- | :--- |
-| **HealOps Core & UI** | `8090` | Spring Boot 3, H2, SSE, React | Autonomous monitoring, MAPE-K engine, SRE control dashboard | Target services |
-| **MediFlow Web Portal** | `3001` | React, Vite, Tailwind | Patient intake, appointments, clinical records, billing UI | Microservices fleet |
-| **Patient Service** | `4000` | Spring Boot 3, JPA, gRPC Client | Patient profiles, medical history, Kafka event publisher | Billing, Auth |
-| **Billing Service** | `4001` | Spring Boot 3, gRPC Server, JPA | Invoice generation, payments, gRPC account verification | Patient, Auth |
-| **Doctor Service** | `4002` | Spring Boot 3, JPA | Doctor directories, specialties, OPD schedules | Auth |
-| **Appointment Service** | `4003` | Spring Boot 3, JPA | Booking consultations, appointment status tracking | Doctor, Patient |
-| **Inventory Service** | `4004` | Spring Boot 3, JPA | Hospital medicine supplies, surgical equipment stock | Auth |
-| **Auth Service** | `4005` | Spring Boot 3, JWT, Security | User authentication, token issuance, RBAC | All services |
-| **Pharmacy Service** | `4006` | Spring Boot 3, JPA | Prescription processing, medicine dispensing | Inventory, Patient |
-| **Laboratory Service** | `4007` | Spring Boot 3, JPA | Pathology test requests, diagnostic lab report generation | Patient, Doctor |
-| **Notification Service** | `4008` | Spring Boot 3 | SMS, email, and emergency dispatch alerts | Fleet events |
-| **API Gateway** | `8080` | Spring Cloud Gateway | Unified reverse proxy, routing, JWT authentication filter | Backend services |
-
----
-
-## ⚡ Failure Detection & Remediation Matrix
-
-| Failure Type | Trigger Condition | Automated Remediation | Estimated MTTR | Explainable Reasoning |
-| :--- | :--- | :--- | :--- | :--- |
-| **`HIGH_CPU`** | CPU utilization > 95% across samples | `CLEAR_CHAOS` / `THREAD_KILL` | ~1,800 ms | Spiked CPU over 95% threshold across consecutive samples. Clearing stress burner threads. |
-| **`HIGH_MEMORY`** | Heap consumption > 300 MB leak | `FORCE_JVM_GC` | ~2,400 ms | Memory saturation detected above safety threshold. Forcing JVM Garbage Collection and buffer release. |
-| **`DATABASE_LOST`** | HikariCP database pool down | `RECONNECT_DB_POOL` | ~3,200 ms | Database connection pool unreachable. Triggering HikariCP pool refresh and reconnect as cheapest step. |
-| **`SLOW_RESPONSE`** | Response latency ≥ 3,000 ms | `RESET_CIRCUIT_BREAKER` | ~1,500 ms | Latency exceeded 3000ms SLA. Tripping circuit breaker to shed load and resetting delay. |
-| **`HTTP_5XX_ERRORS`** | Consecutive HTTP 500 error spikes | `CLEAR_CHAOS` | ~1,200 ms | 5xx error spikes detected in sliding window. Clearing faulty mock state and restoring normal handler. |
-| **`SERVICE_CRASH`** | Process unreachable / timeout > 2s | `RESTART_CONTAINER` | ~5,500 ms | Process unreachable across probes. Escalating to container/process restart. |
-
----
-
-## 💥 Chaos Engineering Subsystem
-
-Each MediFlow microservice exposes an embedded `/chaos` controller for testing resilience:
-
-```bash
-# 1. Trigger High CPU Stress (burns threads for N seconds)
-curl -X POST "http://localhost:4000/chaos/cpu?seconds=20"
-
-# 2. Trigger Memory Leak (allocates 200MB into memory sink)
-curl -X POST "http://localhost:4000/chaos/memory?mb=200"
-
-# 3. Simulate Database Outage (drops connection pool)
-curl -X POST "http://localhost:4000/chaos/db-disconnect"
-
-# 4. Inject Latency (delays requests by N milliseconds)
-curl -X POST "http://localhost:4000/chaos/latency?ms=3500"
-
-# 5. Inject 500 Internal Server Errors
-curl -X POST "http://localhost:4000/chaos/500?enable=true"
-
-# 6. Check Chaos State
-curl -X GET "http://localhost:4000/chaos/status"
-
-# 7. Manual Reset / Recovery
-curl -X POST "http://localhost:4000/chaos/reset"
+```text
+Scheduled probe
+  → health state / metric update
+  → repeated failure detection
+  → incident and policy lookup
+  → supported recovery action for a managed target
+  → later health probes verify the result
+  → incident and action history update
 ```
 
----
+A successful Docker control response means the action was accepted; it does not by itself mean the application recovered. External website failures follow a separate monitor-only path.
 
-## 🛠 Technology Stack
+## Services and local ports
 
-- **Backend Framework**: Java 21, Spring Boot 3.x, Spring Cloud Gateway, Spring Data JPA, Spring Actuator
-- **Frontend**: React 18, Vite, Tailwind CSS, Lucide Icons, Recharts (Metrics Sparklines)
-- **Database & Storage**: H2 In-Memory Database (with pre-seeded microservice records), PostgreSQL support
-- **Inter-Service Communication**: REST (JSON), gRPC (Protobuf), Apache Kafka (Event Streaming)
-- **Monitoring & Observability**: Server-Sent Events (SSE), Health Actuators, Custom Metrics Collectors
-- **Platform Orchestration**: Batch launchers, Docker container management hooks
+The default Compose file starts the following containers:
 
----
+| Component | Local URL / port | Notes |
+|---|---|---|
+| MediFlow Web | [http://localhost:3001](http://localhost:3001) | Browser app; Nginx proxies API requests |
+| HealOps Dashboard | [http://localhost:8091](http://localhost:8091) | Operations UI |
+| API Gateway | `localhost:8080` | Auth, Patient, and Clinical routes |
+| HealOps Core API | `localhost:8090` | Monitoring, incident, policy, and SSE APIs |
+| Auth Service | `localhost:4005` | Login and JWT validation |
+| Clinical Service | `localhost:4002` | Consolidated clinical APIs |
+| Patient Service | Docker network only | Reached through the Gateway; no host port is published by default |
+| Docker-control proxy | Docker internal network only | Restricted routes; not a public UI/API |
 
-## 🚀 Getting Started & Installation
+Ports can conflict with software already running on the host. Check the effective Compose configuration before changing mappings.
 
-### Prerequisites
-- **Java Development Kit (JDK 21 or higher)**
-- **Apache Maven 3.9+**
-- **Node.js (v18 or higher) & npm**
-- **Git**
+### Optional Compose profiles
 
-### One-Click Launchers (Windows)
-The root directory includes automated batch scripts for quick setup:
+| Profile | Component(s) | Notes |
+|---|---|---|
+| `billing` | Billing gRPC service | Optional; the default stack does not start it. |
+| `extended` | Notification Service | Optional; the default stack does not start it. |
+| `messaging` | Kafka | Optional. The Compose service uses `pull_policy: never`; make sure the referenced Kafka image is already available locally. Analytics Service is not included in the default Compose graph. |
 
-1. **Launch the HealOps Autonomous Platform & Dashboard**:
-   ```cmd
-   start-healops.bat
-   ```
-   *Starts Patient Service (:4000), launches HealOps Core (:8090), and opens `http://localhost:8090` in your browser.*
+Some older standalone domain modules remain in the repository. The default stack uses `clinical-service` for those domains rather than starting each legacy service independently.
 
-2. **Launch the Full MediFlow Microservices Fleet (8 Microservices)**:
-   ```cmd
-   start-mediflow-fleet.bat
-   ```
-   *Launches Patient, Billing, Doctor, Appointment, Inventory, Pharmacy, Laboratory, and Notification services across ports 4000–4008.*
+## Run locally with Docker Compose
 
-3. **Launch the MediFlow Hospital Web Portal**:
-   ```cmd
-   start-mediflow-web.bat
-   ```
-   *Starts the React frontend on `http://localhost:3001`.*
+### Requirements
 
----
+- Docker Engine with Docker Compose v2 (Docker Desktop can provide these on Windows/macOS).
+- A supported build environment for the Dockerfiles in this repository.
+- A private JWT signing secret supplied through the root `.env` file.
 
-### Manual Launch Guide
+Generate a random Base64 secret with PowerShell:
 
-#### 1. Start HealOps Core & Dashboard
-```bash
-cd healops-core
-mvn spring-boot:run
+```powershell
+[Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
 ```
-Access the dashboard at **`http://localhost:8090`**.
 
-#### 2. Start a Microservice (e.g., Patient Service)
-```bash
-cd patient-service
-mvn spring-boot:run
+Create `.env` in the repository root (it is ignored by Git):
+
+```dotenv
+JWT_SECRET=PASTE_THE_GENERATED_VALUE_HERE
 ```
-Runs on **`http://localhost:4000`**.
 
-#### 3. Start MediFlow Frontend Portal
-```bash
-cd mediflow-web
-npm install
-npm run dev
+Do not commit `.env` or use a development secret for a public deployment.
+
+### Start
+
+```powershell
+docker compose up -d --build
+docker compose ps
 ```
-Runs on **`http://localhost:3001`**.
 
----
+Open:
 
-## 📡 REST API Reference (HealOps Core)
+- MediFlow: [http://localhost:3001](http://localhost:3001)
+- HealOps: [http://localhost:8091](http://localhost:8091)
 
-| Endpoint | Method | Description |
-| :--- | :--- | :--- |
-| `/api/stream/events` | `GET` | **Live SSE Stream**: Real-time metric events and incident updates |
-| `/api/overview` | `GET` | System health summary, active counts, recoveries today, uptime % |
-| `/api/services` | `GET` | List all monitored internal microservices and external endpoints |
-| `/api/services` | `POST` | Register a new service dynamically for monitoring |
-| `/api/services/{id}/detail` | `GET` | Detailed diagnostic breakdown, sparkline metrics, and MTTR stats |
-| `/api/metrics?serviceId={id}` | `GET` | Historical CPU, memory, latency, and error metrics |
-| `/api/incidents` | `GET` | Top 20 recent failure incidents and resolution records |
-| `/api/incidents/{id}/actions` | `GET` | Step-by-step recovery actions executed for a specific incident |
-| `/api/policies` | `GET` | View active multi-tier escalation policies |
-| `/api/policies/{id}` | `PUT` | Update policy retries, action, or cooldown duration |
-| `/api/simulate` | `POST` | Dispatch chaos simulation (`HIGH_CPU`, `HIGH_MEMORY`, `DATABASE_LOST`, etc.) |
+The repository also contains Windows launch scripts, including `start-mediflow-fleet.bat` and `start-silent.ps1`. Review scripts before using them in environments with different Docker settings.
 
----
+### Logs and stop
 
-## 🧪 Live Demonstration Workflow
+```powershell
+docker compose logs -f
 
-To demonstrate autonomous self-healing in action:
+docker compose stop
+```
 
-1. Open the **HealOps Dashboard** at `http://localhost:8090`. All microservices will show `HEALTHY` (100% health score).
-2. Go to the **Chaos Simulator** panel on the dashboard.
-3. Select `patient-service` and choose **CPU Spike** or **Database Disconnect**, then click **Inject Fault**.
-4. Observe the real-time change:
-   - Within 5 seconds: Service status changes from `HEALTHY` ➔ `WARNING`.
-   - After 3 consecutive probe breaches: Status escalates to `CRITICAL`.
-   - The **Incident Timeline** records the incident with explanation: *"Spiked CPU over 95% threshold across consecutive samples."*
-   - HealOps immediately triggers the automated recovery action (`CLEAR_CHAOS`).
-   - The incident transitions to `RECOVERED` with real-time MTTR measurement (~1,800 ms).
-   - Health score recovers to `HEALTHY` (95–100%) with zero human intervention required.
+To stop and remove containers/networks while keeping named database volumes:
 
----
+```powershell
+docker compose down
+```
 
-## 👤 Author & License
+**Data warning:** Do not use `docker compose down -v` unless you intentionally want to remove the named volumes and their stored data. The default named volumes include `healops-data`, `patient-data`, and `clinical-data`. Auth persistence is configured separately; inspect the active database URL and mounts before relying on container replacement for data retention.
 
-- **Developer**: [Orange1008](https://github.com/Orange1008)
-- **Repository**: [https://github.com/Orange1008/healOPS](https://github.com/Orange1008/healOPS)
-- **License**: Licensed under the [MIT License](LICENSE).
+## API overview
+
+The Gateway is the normal entry point for MediFlow requests. The exact request and response DTOs are defined by the corresponding controllers and DTO classes.
+
+| Method | Public path | Purpose |
+|---|---|---|
+| `POST` | `/auth/login` | Verify credentials and issue JWT |
+| `GET` | `/auth/validate` | Validate Bearer JWT |
+| `GET`, `POST` | `/api/patients` | List/create patients (JWT filter applies) |
+| `GET`, `PUT`, `DELETE` | `/api/patients/{id}` | Read/update/delete patient (JWT filter applies) |
+| `GET`, `POST` | `/api/doctors` | List/create doctors |
+| `GET`, `PUT`, `DELETE` | `/api/doctors/{id}` | Read/update/delete doctor |
+| `GET`, `POST` | `/api/appointments` | List/create appointments |
+| `GET` | `/api/appointments/patient/{patientId}` | Find appointments by patient |
+| `GET` | `/api/appointments/doctor/{doctorId}` | Find appointments by doctor |
+| `GET`, `POST` | `/api/inventory`, `/api/laboratory`, `/api/pharmacy` | Clinical-domain list/create operations |
+| `GET` | `/api/overview`, `/api/services`, `/api/incidents`, `/api/recovery-actions`, `/api/policies` | HealOps operations data |
+| `POST` | `/api/services` | Register a monitoring target |
+| `DELETE` | `/api/services/{id}` | Stop/remove monitoring target according to target category |
+| `POST` | `/api/simulate` | Trigger a supported simulation path |
+| `GET` | `/api/stream/events` | HealOps Server-Sent Events stream |
+
+The current gateway configuration visibly applies JWT validation to the Patient route. Review route configuration and deployment controls before exposing other MediFlow or HealOps endpoints outside a trusted local environment.
+
+## Technology
+
+- **Backend:** Java 21, Spring Boot, Spring MVC, Spring Cloud Gateway, Spring Security, Spring Data JPA, Hibernate, HikariCP, Actuator/Micrometer, Maven.
+- **Authentication:** BCrypt password hashing and signed JWTs (JJWT).
+- **Data:** H2 databases in the local Compose configuration; selected services use named Docker volumes. PostgreSQL drivers are present in some POMs, but the default Compose datasource configuration uses H2.
+- **Frontend:** React, Vite, JavaScript/JSX, Fetch API, Lucide icons; HealOps Dashboard also uses Recharts.
+- **Edge/runtime:** Docker, Docker Compose, Nginx, REST/HTTP, and SSE.
+- **Optional integrations:** gRPC/protobuf and Kafka. Their presence in source does not mean they run in the default Compose stack.
+
+## How HealOps differs from other tools
+
+| Tool | Main role | Difference from HealOps |
+|---|---|---|
+| Docker | Runs containers and exposes lifecycle controls | HealOps adds health interpretation, incidents, policy decisions, and verification; Docker remains the execution layer. |
+| Docker Compose | Defines and operates a local multi-container application | HealOps adds ongoing application-level monitoring and a recovery workflow. |
+| Kubernetes | Cluster scheduling and desired-state reconciliation | HealOps does not schedule replicas or nodes. Kubernetes is much broader for cluster operations; HealOps' contribution is a small app-specific incident/action history. |
+| Prometheus | Metrics collection, time-series storage, query/rules | HealOps has narrower metrics but includes a custom bounded recovery path. Prometheus is not included in this repo. |
+| Grafana | Dashboards and visualization across data sources | HealOps includes a custom operations UI and control workflow; Grafana has a broader visualization ecosystem. |
+| Datadog / New Relic / Dynatrace | Commercial observability platforms | They provide broader integrations and telemetry products; HealOps is a smaller source-visible educational implementation tied to its local services. |
+
+HealOps is best described as an **educational microservice operations and reliability prototype with limited policy-based recovery**. It is not a replacement for the platforms above. See [the technical and viva guide](docs/PROJECT_VIVA_TECHNICAL_GUIDE.md) for a deeper, source-bounded comparison and limitations.
+
+## Limitations and security notes
+
+- The health score is a simple status mapping and arithmetic average; it is not an SLA/uptime calculation.
+- The recovery policy only supports actions implemented in the current code; it cannot repair arbitrary application failures.
+- No machine-learning or predictive failure detection is implemented.
+- Kafka, Billing, Notifications, and Analytics are not all part of the default runtime.
+- The HealOps API authentication boundary and MediFlow route protections are limited in the current source. Keep the project on a trusted local network until route authorization, secrets, and operational APIs are reviewed and secured.
+- H2 and local Compose are convenient for development and demonstration. Production operation requires a deliberate database, backup/restore, security, observability, and availability design.
+- No live runtime certification is implied by this README.
+
+## Project structure
+
+```text
+api-gateway/         Gateway routing and Patient JWT validation
+ auth-service/       Credential verification and JWT handling
+ patient-service/    Patient APIs and persistence
+ clinical-service/   Consolidated doctor/appointment/inventory/lab/pharmacy APIs
+ healops-core/       Probes, incidents, policy, recovery, and operations API
+ healops-dashboard/  HealOps React dashboard
+ mediflow-web/       MediFlow React application
+ billing-service/    Optional gRPC Billing module
+ notification-service/ Optional notification module
+ analytics-service/  Optional Kafka consumer (not in default Compose graph)
+ infrastructure/      Docker-control and infrastructure configuration
+ docs/                Source-based technical/viva guide
+```
+
+Standalone `doctor-service`, `appointment-service`, `inventory-service`, `laboratory-service`, and `pharmacy-service` folders are also present; the default Compose setup uses their consolidated Clinical Service counterparts.
+
+## Further reading
+
+- [Project technical and viva guide](docs/PROJECT_VIVA_TECHNICAL_GUIDE.md)
+- [Docker Compose configuration](docker-compose.yml)
+- [HealOps Core monitoring engine](healops-core/src/main/java/com/healops/core/engine/SelfHealingEngine.java)
+- [Gateway route configuration](api-gateway/src/main/resources/application.yml)
+- [Authentication controller](auth-service/src/main/java/com/pm/authservice/controller/AuthController.java)
+- [Patient controller](patient-service/src/main/java/com/pm/patientservice/controller/PatientController.java)
+
+## License
+
+This project is distributed under the [MIT License](LICENSE).

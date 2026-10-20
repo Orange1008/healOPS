@@ -1,12 +1,14 @@
 package com.healops.core.controller;
 
 import com.healops.core.model.*;
+import com.healops.core.engine.SelfHealingEngine;
 import com.healops.core.repository.*;
 import com.healops.core.stream.EventBroadcaster;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.*;
@@ -21,8 +23,10 @@ public class HealOpsApiController {
     private final IncidentRepository incidentRepo;
     private final PolicyRepository policyRepo;
     private final RecoveryActionRepository actionRepo;
+    private final OperationalEventRepository eventRepo;
     private final EventBroadcaster broadcaster;
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final SelfHealingEngine selfHealingEngine;
+    private final RestTemplate restTemplate;
 
     public HealOpsApiController(
             MonitoredServiceRepository serviceRepo,
@@ -30,14 +34,23 @@ public class HealOpsApiController {
             IncidentRepository incidentRepo,
             PolicyRepository policyRepo,
             RecoveryActionRepository actionRepo,
-            EventBroadcaster broadcaster
+            OperationalEventRepository eventRepo,
+            EventBroadcaster broadcaster,
+            SelfHealingEngine selfHealingEngine,
+            RestTemplateBuilder restTemplateBuilder
     ) {
         this.serviceRepo = serviceRepo;
         this.metricRepo = metricRepo;
         this.incidentRepo = incidentRepo;
         this.policyRepo = policyRepo;
         this.actionRepo = actionRepo;
+        this.eventRepo = eventRepo;
         this.broadcaster = broadcaster;
+        this.selfHealingEngine = selfHealingEngine;
+        this.restTemplate = restTemplateBuilder
+                .setConnectTimeout(java.time.Duration.ofSeconds(2))
+                .setReadTimeout(java.time.Duration.ofSeconds(5))
+                .build();
     }
 
     // 1. LIVE SSE STREAM
@@ -49,14 +62,16 @@ public class HealOpsApiController {
     // 2. DASHBOARD KPI & OVERVIEW
     @GetMapping("/overview")
     public ResponseEntity<Map<String, Object>> getOverview() {
-        List<MonitoredService> services = serviceRepo.findAll();
+        List<MonitoredService> services = serviceRepo.findByEnabledTrue();
         long totalServices = services.size();
         long healthyCount = services.stream().filter(s -> s.getCurrentStatus() == ServiceStatus.HEALTHY).count();
-        long warningCount = services.stream().filter(s -> s.getCurrentStatus() == ServiceStatus.WARNING).count();
+        long warningCount = services.stream().filter(s -> s.getCurrentStatus() == ServiceStatus.WARNING
+                || s.getCurrentStatus() == ServiceStatus.RECOVERING).count();
         long criticalCount = services.stream().filter(s -> s.getCurrentStatus() == ServiceStatus.CRITICAL).count();
 
         double avgScore = services.stream().mapToInt(MonitoredService::getHealthScore).average().orElse(100.0);
-        long resolvedIncidents = incidentRepo.findAll().stream().filter(i -> "RECOVERED".equalsIgnoreCase(i.getStatus())).count();
+        long resolvedIncidents = incidentRepo.countByStatusIgnoreCaseAndResolvedAtAfter(
+                "RECOVERED", java.time.LocalDate.now().atStartOfDay());
 
         Map<String, Object> overview = new HashMap<>();
         overview.put("totalServices", totalServices);
@@ -65,7 +80,7 @@ public class HealOpsApiController {
         overview.put("criticalCount", criticalCount);
         overview.put("systemHealthScore", Math.round(avgScore));
         overview.put("recoveriesToday", resolvedIncidents);
-        overview.put("uptimePercent", 99.85);
+        overview.put("uptimePercent", null);
 
         return ResponseEntity.ok(overview);
     }
@@ -73,7 +88,10 @@ public class HealOpsApiController {
     // 3. SERVICES LIST & REGISTRATION
     @GetMapping("/services")
     public ResponseEntity<List<MonitoredService>> getServices() {
-        return ResponseEntity.ok(serviceRepo.findAll());
+        List<MonitoredService> services = serviceRepo.findByEnabledTrue();
+        services.forEach(service -> metricRepo.findFirstByServiceIdOrderByCollectedAtDesc(service.getId())
+                .ifPresent(metric -> service.setLastResponseTimeMs(metric.getResponseTimeMs())));
+        return ResponseEntity.ok(services);
     }
 
     @PostMapping("/services")
@@ -90,11 +108,25 @@ public class HealOpsApiController {
         newService.setHealthScore(100);
         newService.setEnabled(true);
         MonitoredService saved = serviceRepo.save(newService);
+        eventRepo.save(new OperationalEvent("SERVICE_REGISTERED", saved.getName(),
+                "Registered for monitoring: " + saved.getHealthUrl()));
         return ResponseEntity.ok(saved);
     }
 
     @DeleteMapping("/services/{id}")
     public ResponseEntity<Void> deleteService(@PathVariable Long id) {
+        Optional<MonitoredService> target = serviceRepo.findById(id);
+        if (target.isEmpty()) return ResponseEntity.notFound().build();
+        MonitoredService service = target.get();
+        if (service.getCategory() == ServiceCategory.EXTERNAL_API) {
+            service.setEnabled(false);
+            serviceRepo.save(service);
+            selfHealingEngine.forgetMonitoringState(id);
+            eventRepo.save(new OperationalEvent("SERVICE_UNREGISTERED", service.getName(),
+                    "External website monitoring stopped. Incident and probe history retained."));
+            return ResponseEntity.noContent().build();
+        }
+        eventRepo.save(new OperationalEvent("SERVICE_UNREGISTERED", service.getName(), "Removed from active monitoring."));
         serviceRepo.deleteById(id);
         return ResponseEntity.noContent().build();
     }
@@ -104,7 +136,7 @@ public class HealOpsApiController {
     public ResponseEntity<Map<String, Object>> getServiceDetail(@PathVariable Long id) {
         return serviceRepo.findById(id).map(service -> {
             // last 20 metrics for sparklines
-            List<ServiceMetric> recent = metricRepo.findByServiceIdOrderByCollectedAtDesc(id);
+            List<ServiceMetric> recent = metricRepo.findTop30ByServiceIdOrderByCollectedAtDesc(id);
             if (recent.size() > 20) recent = recent.subList(0, 20);
             Collections.reverse(recent);
 
@@ -153,10 +185,7 @@ public class HealOpsApiController {
     // 4. METRICS FOR RECHARTS
     @GetMapping("/metrics")
     public ResponseEntity<List<ServiceMetric>> getMetrics(@RequestParam Long serviceId) {
-        List<ServiceMetric> metrics = metricRepo.findByServiceIdOrderByCollectedAtDesc(serviceId);
-        if (metrics.size() > 30) {
-            metrics = metrics.subList(0, 30);
-        }
+        List<ServiceMetric> metrics = metricRepo.findTop30ByServiceIdOrderByCollectedAtDesc(serviceId);
         Collections.reverse(metrics);
         return ResponseEntity.ok(metrics);
     }
@@ -164,12 +193,22 @@ public class HealOpsApiController {
     // 5. INCIDENTS (RECOVERY TIMELINE & RECOMMENDATION PANEL)
     @GetMapping("/incidents")
     public ResponseEntity<List<Incident>> getIncidents() {
-        return ResponseEntity.ok(incidentRepo.findTop20ByOrderByDetectedAtDesc());
+        return ResponseEntity.ok(incidentRepo.findTop100ByOrderByDetectedAtDesc());
     }
 
     @GetMapping("/incidents/{id}/actions")
     public ResponseEntity<List<RecoveryAction>> getIncidentActions(@PathVariable Long id) {
         return ResponseEntity.ok(actionRepo.findByIncidentIdOrderByStepNumberAsc(id));
+    }
+
+    @GetMapping("/recovery-actions")
+    public ResponseEntity<List<RecoveryAction>> getRecoveryActionHistory() {
+        return ResponseEntity.ok(actionRepo.findTop100ByOrderByStartedAtDesc());
+    }
+
+    @GetMapping("/audit-events")
+    public ResponseEntity<List<OperationalEvent>> getOperationalHistory() {
+        return ResponseEntity.ok(eventRepo.findTop100ByOrderByCreatedAtDesc());
     }
 
     // 6. POLICIES
@@ -202,30 +241,81 @@ public class HealOpsApiController {
         }
 
         MonitoredService service = optService.get();
+        if (service.getCategory() == ServiceCategory.EXTERNAL_API) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "External targets are monitor-only and do not support fault injection",
+                    "serviceName", serviceName,
+                    "category", "EXTERNAL_API"
+            ));
+        }
+        if (!"CLEAR_CHAOS".equalsIgnoreCase(failureType)
+                && (service.getSupportedFaults() == null || Arrays.stream(service.getSupportedFaults().split(","))
+                .map(String::trim).noneMatch(fault -> fault.equalsIgnoreCase(failureType)))) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "This fault is not supported by " + serviceName,
+                    "serviceName", serviceName,
+                    "supportedFaults", service.getSupportedFaults() == null ? "" : service.getSupportedFaults()
+            ));
+        }
         if (service.getChaosUrl() == null) {
             return ResponseEntity.badRequest().body(Map.of("error", "Chaos endpoint not configured for " + serviceName));
         }
 
         String targetUrl = switch (failureType.toUpperCase()) {
+            case "CLEAR_CHAOS" -> service.getChaosUrl() + "/reset";
             case "HIGH_CPU" -> service.getChaosUrl() + "/cpu?seconds=" + durationSeconds;
             case "HIGH_MEMORY" -> service.getChaosUrl() + "/memory?mb=200";
             case "DATABASE_LOST" -> service.getChaosUrl() + "/db-disconnect";
             case "SLOW_RESPONSE" -> service.getChaosUrl() + "/latency?ms=3500";
             case "HTTP_5XX_ERRORS" -> service.getChaosUrl() + "/500?enable=true";
             case "SERVICE_CRASH" -> service.getChaosUrl() + "/crash";
-            default -> service.getChaosUrl() + "/cpu?seconds=10";
+            default -> null;
         };
+
+        if (targetUrl == null) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "Unsupported failure type: " + failureType,
+                    "targetService", serviceName,
+                    "failureType", failureType
+            ));
+        }
 
         try {
             restTemplate.postForLocation(targetUrl, null);
+            if (!"CLEAR_CHAOS".equalsIgnoreCase(failureType)) {
+                eventRepo.save(new OperationalEvent("FAULT_INJECTED", service.getName(),
+                        "Injected " + failureType.toUpperCase() + " fault."));
+                service.setCurrentStatus(ServiceStatus.WARNING);
+                service.setHealthScore(65);
+                serviceRepo.save(service);
+                broadcaster.broadcast("FAULT_INJECTED", Map.of(
+                        "serviceName", service.getName(),
+                        "failureType", failureType.toUpperCase(),
+                        "status", ServiceStatus.WARNING.name(),
+                        "detectedAt", java.time.LocalDateTime.now().toString()
+                ));
+                selfHealingEngine.handleInjectedFault(
+                        service,
+                        FailureType.valueOf(failureType.toUpperCase(Locale.ROOT))
+                );
+            } else {
+                eventRepo.save(new OperationalEvent("FAULT_CLEARED", service.getName(),
+                        "Requested reset of all injected faults."));
+                broadcaster.broadcast("FAULT_CLEARED", Map.of(
+                        "serviceName", service.getName(),
+                        "status", "RECOVERING"
+                ));
+            }
             return ResponseEntity.ok(Map.of(
                     "status", "SIMULATION_TRIGGERED",
                     "targetService", serviceName,
                     "failureType", failureType
             ));
         } catch (Exception e) {
-            return ResponseEntity.ok(Map.of(
-                    "status", "SIMULATION_SENT_WITH_POSSIBLE_CRASH",
+            eventRepo.save(new OperationalEvent("FAULT_INJECTION_FAILED", serviceName,
+                    "Could not apply " + failureType + ": " + e.getMessage()));
+            return ResponseEntity.status(502).body(Map.of(
+                    "error", "Could not inject " + failureType + " into " + serviceName,
                     "targetService", serviceName,
                     "failureType", failureType,
                     "detail", e.getMessage()

@@ -4,14 +4,38 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.web.util.UriUtils;
+import java.nio.charset.StandardCharsets;
 
-import java.util.Map;
+import java.time.Duration;
+import java.util.Set;
 
 @Service
 public class OrchestratorService {
 
     private static final Logger log = LoggerFactory.getLogger(OrchestratorService.class);
-    private final RestClient restClient = RestClient.create();
+    private static final Set<String> DOCKER_CONTROLLED_CONTAINERS = Set.of(
+            "patient-service", "clinical-service", "auth-service", "api-gateway");
+    private final RestClient restClient;
+    private final RestClient dockerRestClient;
+    private final String dockerApiBase;
+
+    public OrchestratorService(@Value("${HEALOPS_DOCKER_HOST:http://healops-docker-control}") String dockerHost) {
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(Duration.ofSeconds(2));
+        requestFactory.setReadTimeout(Duration.ofSeconds(8));
+        this.restClient = RestClient.builder().requestFactory(requestFactory).build();
+
+        SimpleClientHttpRequestFactory dockerRequestFactory = new SimpleClientHttpRequestFactory();
+        dockerRequestFactory.setConnectTimeout(Duration.ofSeconds(3));
+        // Restarting a JVM container may take much longer than clearing an
+        // injected fault. Let Docker return its response after the restart.
+        dockerRequestFactory.setReadTimeout(Duration.ofSeconds(120));
+        this.dockerRestClient = RestClient.builder().requestFactory(dockerRequestFactory).build();
+        this.dockerApiBase = dockerHost == null ? "" : dockerHost.replaceFirst("^tcp://", "http://").replaceFirst("/$", "");
+    }
 
     /**
      * Executes a multi-tier recovery action step:
@@ -81,7 +105,7 @@ public class OrchestratorService {
     private boolean triggerJvmGarbageCollection(String chaosUrl) {
         if (chaosUrl == null || chaosUrl.isBlank()) return false;
         try {
-            // Invokes reset which clears memory sinks and calls System.gc()
+            // Reset clears the service's simulated memory-pressure sink.
             String url = chaosUrl + "/reset";
             log.info("🧹 Requesting Heap Reclamation and GC sweep on {}", url);
             restClient.post().uri(url).retrieve().toBodilessEntity();
@@ -121,14 +145,57 @@ public class OrchestratorService {
     private boolean restartDockerContainer(String containerName) {
         if (containerName == null || containerName.isBlank()) return false;
         try {
-            log.info("🐳 Executing Docker restart command for: {}", containerName);
-            Process process = Runtime.getRuntime().exec(new String[]{"docker", "restart", containerName});
-            int exitCode = process.waitFor();
-            if (exitCode == 0) {
-                log.info("✅ Docker container {} restarted successfully", containerName);
-                return true;
+            if (dockerApiBase.isBlank()) {
+                log.error("Docker restart unavailable for {}: HEALOPS_DOCKER_HOST is empty", containerName);
+                return false;
             }
-        } catch (Exception ignored) {}
+            if (!DOCKER_CONTROLLED_CONTAINERS.contains(containerName)) {
+                log.error("Docker recovery is not allowlisted for container {}", containerName);
+                return false;
+            }
+            String encodedName = UriUtils.encodePathSegment(containerName, StandardCharsets.UTF_8);
+            boolean restartAccepted = false;
+            try {
+                log.info("🐳 Requesting allowlisted Docker restart for {} via {}", containerName, dockerApiBase);
+                dockerRestClient.post()
+                        .uri(dockerApiBase + "/restart/" + encodedName)
+                        .retrieve()
+                        .toBodilessEntity();
+                restartAccepted = true;
+                log.info("✅ Docker restart request accepted for {}", containerName);
+            } catch (Exception restartError) {
+                // Docker's restart endpoint can return success without starting
+                // a container that was already exited. Fall through to start.
+                log.warn("Docker restart request failed for {}: {}; trying allowlisted start",
+                        containerName, restartError.getMessage());
+            }
+
+            boolean startAccepted = startDockerContainer(encodedName, containerName);
+            if (!restartAccepted && !startAccepted) return false;
+            log.info("✅ Docker recovery confirmed for {} (restartAccepted={}, startAccepted={})",
+                    containerName, restartAccepted, startAccepted);
+            return true;
+        } catch (Exception e) {
+            log.error("Restricted Docker restart failed for {} via {}: {}",
+                    containerName, dockerApiBase, e.getMessage());
+        }
         return false;
+    }
+
+    private boolean startDockerContainer(String encodedName, String containerName) {
+        try {
+            int status = dockerRestClient.post()
+                    .uri(dockerApiBase + "/start/" + encodedName)
+                    .exchange((request, response) -> response.getStatusCode().value());
+            // Docker returns 304 when the container is already running. That is
+            // expected after a successful restart and means it is started.
+            boolean accepted = (status >= 200 && status < 300) || status == 304;
+            log.info("Docker start check for {} returned HTTP {} (accepted={})",
+                    containerName, status, accepted);
+            return accepted;
+        } catch (Exception e) {
+            log.warn("Allowlisted Docker start failed for {}: {}", containerName, e.getMessage());
+            return false;
+        }
     }
 }

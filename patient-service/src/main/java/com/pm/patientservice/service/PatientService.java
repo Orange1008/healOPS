@@ -4,8 +4,7 @@ import com.pm.patientservice.dto.PatientRequestDTO;
 import com.pm.patientservice.dto.PatientResponseDTO;
 import com.pm.patientservice.exception.EmailAlreadyExistsException;
 import com.pm.patientservice.exception.PatientNotFoundException;
-import com.pm.patientservice.grpc.BillingServiceGrpcClient;
-import com.pm.patientservice.kafka.KafkaProducer;
+import com.pm.patientservice.integration.PatientIntegrationService;
 import com.pm.patientservice.mapper.PatientMapper;
 import com.pm.patientservice.model.Patient;
 import com.pm.patientservice.repository.PatientRepository;
@@ -18,21 +17,24 @@ import org.springframework.stereotype.Service;
 public class PatientService {
 
   private final PatientRepository patientRepository;
-  private final BillingServiceGrpcClient billingServiceGrpcClient;
-  private final KafkaProducer kafkaProducer;
+  private final PatientIntegrationService patientIntegrationService;
 
   public PatientService(PatientRepository patientRepository,
-      BillingServiceGrpcClient billingServiceGrpcClient,
-      KafkaProducer kafkaProducer) {
+      PatientIntegrationService patientIntegrationService) {
     this.patientRepository = patientRepository;
-    this.billingServiceGrpcClient = billingServiceGrpcClient;
-    this.kafkaProducer = kafkaProducer;
+    this.patientIntegrationService = patientIntegrationService;
   }
 
   public List<PatientResponseDTO> getPatients() {
     List<Patient> patients = patientRepository.findAll();
 
     return patients.stream().map(PatientMapper::toDTO).toList();
+  }
+
+  public PatientResponseDTO getPatient(UUID id) {
+    Patient patient = patientRepository.findById(id).orElseThrow(
+        () -> new PatientNotFoundException("Patient not found with ID: " + id));
+    return PatientMapper.toDTO(patient);
   }
 
   public PatientResponseDTO createPatient(PatientRequestDTO patientRequestDTO) {
@@ -45,10 +47,7 @@ public class PatientService {
     Patient newPatient = patientRepository.save(
         PatientMapper.toModel(patientRequestDTO));
 
-    billingServiceGrpcClient.createBillingAccount(newPatient.getId().toString(),
-        newPatient.getName(), newPatient.getEmail());
-
-    kafkaProducer.sendEvent(newPatient);
+    patientIntegrationService.onPatientCreated(newPatient);
 
     return PatientMapper.toDTO(newPatient);
   }

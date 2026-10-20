@@ -1,5 +1,18 @@
 server:
-  port: 4004 # Gateway listens on port 4004
+  port: 8080
+
+auth:
+  service:
+    url: ${AUTH_SERVICE_URL:http://auth-service:4005}
+
+management:
+  endpoint:
+    health:
+      show-details: always
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics,info
 
 spring:
   cloud:
@@ -11,8 +24,6 @@ spring:
             - Path=/auth/**
           filters:
             - StripPrefix=1
-
-        # Route for /api/patients/** to patient-service
         - id: patient-service-route
           uri: http://patient-service:4000
           predicates:
@@ -20,15 +31,36 @@ spring:
           filters:
             - StripPrefix=1
             - JwtValidation
-
-        # Route for /api/docs/patients to patient-service /v3/api-docs
+        - id: doctor-service-route
+          uri: http://clinical-service:4002
+          predicates:
+            - Path=/api/doctors/**
+        - id: appointment-service-route
+          uri: http://clinical-service:4002
+          predicates:
+            - Path=/api/appointments/**
+        - id: clinical-laboratory-route
+          uri: http://clinical-service:4002
+          predicates:
+            - Path=/api/laboratory/**
+        - id: clinical-pharmacy-route
+          uri: http://clinical-service:4002
+          predicates:
+            - Path=/api/pharmacy/**
+        - id: clinical-inventory-route
+          uri: http://clinical-service:4002
+          predicates:
+            - Path=/api/inventory/**
+        - id: notification-service-route
+          uri: http://notification-service:4008
+          predicates:
+            - Path=/api/notifications/**
         - id: api-docs-patient-route
           uri: http://patient-service:4000
           predicates:
             - Path=/api-docs/patients
           filters:
             - RewritePath=/api-docs/patients,/v3/api-docs
-
         - id: api-docs-auth-route
           uri: http://auth-service:4005
           predicates:

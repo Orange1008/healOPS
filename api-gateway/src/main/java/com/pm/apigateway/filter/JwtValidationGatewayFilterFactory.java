@@ -7,6 +7,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 @Component
 public class JwtValidationGatewayFilterFactory extends
@@ -34,8 +35,17 @@ public class JwtValidationGatewayFilterFactory extends
           .uri("/validate")
           .header(HttpHeaders.AUTHORIZATION, token)
           .retrieve()
+          .onStatus(status -> status.isError(), response -> response.createException())
           .toBodilessEntity()
-          .then(chain.filter(exchange));
+          .then(chain.filter(exchange))
+          .onErrorResume(WebClientResponseException.class, error -> {
+            exchange.getResponse().setStatusCode(error.getStatusCode());
+            return exchange.getResponse().setComplete();
+          })
+          .onErrorResume(error -> {
+            exchange.getResponse().setStatusCode(HttpStatus.SERVICE_UNAVAILABLE);
+            return exchange.getResponse().setComplete();
+          });
     };
   }
 }

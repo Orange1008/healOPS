@@ -22,3 +22,181 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #4b5563;
 }
+
+/* HealOps celestial dashboard theme — visual overrides only; application behavior stays in App.jsx. */
+.healops-theme {
+  --healops-blue: #2563eb;
+  --healops-royal: #133ee2;
+  --healops-violet: #6d3de0;
+  --healops-ink: #11182f;
+  --healops-muted: #59627c;
+  color: var(--healops-ink) !important;
+  font-family: 'Plus Jakarta Sans', sans-serif !important;
+  background:
+    radial-gradient(ellipse at 42% 3%, rgba(56, 189, 248, .33), transparent 34%),
+    radial-gradient(ellipse at 88% 19%, rgba(147, 92, 246, .4), transparent 38%),
+    radial-gradient(ellipse at 8% 42%, rgba(37, 99, 235, .4), transparent 42%),
+    linear-gradient(165deg, #071331 0%, #102d78 52%, #2854c7 100%) !important;
+}
+
+.healops-theme,
+.healops-theme * {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+}
+
+.healops-theme h1,
+.healops-theme main h2,
+.healops-theme main h3,
+.healops-theme [class*="w-[680px]"] h2 {
+  font-family: 'Instrument Serif', Georgia, serif !important;
+  letter-spacing: -.025em;
+}
+
+.healops-theme main h2 { font-size: 1.65rem; line-height: 1.15; }
+.healops-theme main h3 { font-size: 1.35rem; line-height: 1.25; }
+
+/* Keep the operations navigation dark and legible against the luminous canvas. */
+.healops-theme > aside {
+  background: rgba(7, 17, 52, .84) !important;
+  border-color: rgba(196, 211, 255, .2) !important;
+  box-shadow: 12px 0 45px rgba(3, 10, 38, .15);
+  color: #eef3ff !important;
+}
+.healops-theme > aside h1,
+.healops-theme > aside .text-white { color: #fff !important; }
+.healops-theme > aside .text-slate-300,
+.healops-theme > aside .text-slate-400,
+.healops-theme > aside .text-slate-500 { color: #c1cceb !important; }
+.healops-theme > aside nav button:not([class*="from-purple-600"]) { color: #c1cceb !important; }
+.healops-theme [class*="from-purple-600"][class*="to-indigo-600"] {
+  background-image: linear-gradient(115deg, #2563eb, #6045e8) !important;
+  box-shadow: 0 8px 24px rgba(37, 99, 235, .32) !important;
+}
+.healops-theme > main > header {
+  background: rgba(8, 20, 59, .82) !important;
+  border-color: rgba(196, 211, 255, .2) !important;
+  color: #fff !important;
+  box-shadow: 0 8px 30px rgba(5, 14, 49, .14);
+}
+.healops-theme > main > header h2 { color: #fff !important; }
+.healops-theme > main > header .text-slate-400 { color: #c7d4f4 !important; }
+
+/* Crisp translucent panels echo the Stitch mockup's glass dashboard surfaces. */
+.healops-theme .gamma-glass,
+.healops-theme [class*="w-[680px]"] {
+  color: var(--healops-ink);
+  background: rgba(255, 255, 255, .94) !important;
+  border-color: rgba(255, 255, 255, .74) !important;
+  box-shadow: 0 18px 48px rgba(4, 17, 68, .13), 0 1px 2px rgba(20, 38, 91, .06);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+.healops-theme .gamma-glass .text-white,
+.healops-theme .gamma-glass .text-slate-100,
+.healops-theme .gamma-glass .text-slate-200,
+.healops-theme .gamma-glass .text-slate-300,
+.healops-theme [class*="w-[680px]"] .text-white,
+.healops-theme [class*="w-[680px]"] .text-slate-100,
+.healops-theme [class*="w-[680px]"] .text-slate-200,
+.healops-theme [class*="w-[680px]"] .text-slate-300 { color: #17213b !important; }
+.healops-theme .gamma-glass .text-slate-400,
+.healops-theme .gamma-glass .text-slate-500,
+.healops-theme [class*="w-[680px]"] .text-slate-400,
+.healops-theme [class*="w-[680px]"] .text-slate-500 { color: #5d6680 !important; }
+.healops-theme .gamma-glass .text-purple-200,
+.healops-theme .gamma-glass .text-purple-300,
+.healops-theme .gamma-glass .text-purple-400,
+.healops-theme [class*="w-[680px]"] .text-purple-200,
+.healops-theme [class*="w-[680px]"] .text-purple-300,
+.healops-theme [class*="w-[680px]"] .text-purple-400 { color: #5730c6 !important; }
+.healops-theme .gamma-glass .text-cyan-300,
+.healops-theme .gamma-glass .text-cyan-400,
+.healops-theme [class*="w-[680px]"] .text-cyan-300,
+.healops-theme [class*="w-[680px]"] .text-cyan-400 { color: #087887 !important; }
+.healops-theme .gamma-glass .text-emerald-300,
+.healops-theme .gamma-glass .text-emerald-400,
+.healops-theme [class*="w-[680px]"] .text-emerald-300,
+.healops-theme [class*="w-[680px]"] .text-emerald-400 { color: #08744f !important; }
+.healops-theme .gamma-glass .text-rose-200,
+.healops-theme .gamma-glass .text-rose-300,
+.healops-theme .gamma-glass .text-rose-400,
+.healops-theme [class*="w-[680px]"] .text-rose-200,
+.healops-theme [class*="w-[680px]"] .text-rose-300,
+.healops-theme [class*="w-[680px]"] .text-rose-400 { color: #a32643 !important; }
+.healops-theme .gamma-glass .text-amber-300,
+.healops-theme .gamma-glass .text-amber-400,
+.healops-theme [class*="w-[680px]"] .text-amber-300,
+.healops-theme [class*="w-[680px]"] .text-amber-400 { color: #986000 !important; }
+
+/* Inputs, nested metric tiles, tables, and modal chrome use the same light surface language. */
+.healops-theme .gamma-glass [class*="bg-white/[0.02]"],
+.healops-theme .gamma-glass [class*="bg-white/[0.04]"],
+.healops-theme .gamma-glass [class*="bg-white/[0.06]"] {
+  background: rgba(232, 238, 255, .68) !important;
+  border-color: rgba(63, 87, 154, .12) !important;
+}
+.healops-theme .gamma-glass [class*="bg-slate-950"],
+.healops-theme [class*="w-[680px]"] [class*="bg-slate-950"] {
+  background: #f7f8fd !important;
+  color: #17213b !important;
+  border-color: #cbd3e8 !important;
+}
+.healops-theme .gamma-glass input,
+.healops-theme .gamma-glass select,
+.healops-theme [class*="w-[680px]"] input,
+.healops-theme [class*="w-[680px]"] select {
+  color: #17213b !important;
+}
+.healops-theme .gamma-glass input::placeholder { color: #7b849d !important; }
+.healops-theme .gamma-glass table { color: #26314d; }
+.healops-theme .gamma-glass th { color: #53607f !important; }
+.healops-theme .gamma-glass td { border-color: rgba(63, 87, 154, .13) !important; }
+.healops-theme .gamma-glass [class*="divide-white"] > * + * { border-color: rgba(63, 87, 154, .13) !important; }
+.healops-theme .gamma-glass [class*="border-white/"] { border-color: rgba(63, 87, 154, .16) !important; }
+.healops-theme .gamma-glass [class*="bg-black/"] {
+  background: #111b34 !important;
+  color: #e7edff !important;
+}
+.healops-theme .gamma-glass [class*="bg-black/"] .text-slate-200,
+.healops-theme .gamma-glass [class*="bg-black/"] .text-white { color: #e7edff !important; }
+.healops-theme .gamma-glass [class*="bg-indigo-600"] { background-color: #2858e8 !important; }
+
+@media (max-width: 900px) {
+  .healops-theme > aside { width: 13rem !important; }
+  .healops-theme > main > header { padding-left: 1.25rem !important; padding-right: 1.25rem !important; }
+  .healops-theme > main > div:last-child { padding: 1.25rem !important; }
+}
+
+@media (max-width: 640px) {
+  .healops-theme { height: 100dvh !important; }
+  .healops-theme > aside { width: 4rem !important; }
+  .healops-theme > aside > div:first-child > div:first-child { padding: .75rem !important; justify-content: center; }
+  .healops-theme > aside > div:first-child > div:first-child > div:not(:first-child),
+  .healops-theme > aside nav button span,
+  .healops-theme > aside nav button > div + span,
+  .healops-theme > aside > div:last-child { display: none !important; }
+  .healops-theme > aside nav { padding: .45rem !important; }
+  .healops-theme > aside nav button { justify-content: center !important; padding: .7rem .35rem !important; }
+  .healops-theme > aside nav button > div { justify-content: center; }
+  .healops-theme > main > header { height: auto !important; min-height: 4rem; gap: .5rem; padding: .65rem .75rem !important; }
+  .healops-theme > main > header p { display: none; }
+  .healops-theme > main > header a { font-size: 0 !important; padding: .5rem !important; }
+  .healops-theme main h2 { font-size: 1.25rem; }
+}
+
+/* Dashboard headings remain geometric; reserve the editorial serif for the landing hero. */
+.healops-theme h1,
+.healops-theme main h2,
+.healops-theme main h3,
+.healops-theme [class*="w-[680px]"] h2 {
+  font-family: 'Plus Jakarta Sans', sans-serif !important;
+  letter-spacing: -.025em;
+}
+
+/* Dependency topology cards sit on light glass, so their status labels need dark ink. */
+.healops-theme main .gamma-glass article[class*="text-rose-200"] { color: #9f1239 !important; background-color: rgba(255, 228, 235, .88) !important; }
+.healops-theme main .gamma-glass article[class*="text-amber-100"] { color: #854d0e !important; background-color: rgba(255, 244, 214, .92) !important; }
+.healops-theme main .gamma-glass article[class*="text-emerald-100"] { color: #065f46 !important; background-color: rgba(220, 252, 231, .88) !important; }
+.healops-theme main .gamma-glass article[class*="text-rose-200"] *,
+.healops-theme main .gamma-glass article[class*="text-amber-100"] *,
+.healops-theme main .gamma-glass article[class*="text-emerald-100"] * { color: inherit !important; }
