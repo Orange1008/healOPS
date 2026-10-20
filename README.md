@@ -206,16 +206,7 @@ The current gateway configuration visibly applies JWT validation to the Patient 
 
 HealOps is best described as an **educational microservice operations and reliability prototype with limited policy-based recovery**. It is not a replacement for the platforms above. See [the technical and viva guide](docs/PROJECT_VIVA_TECHNICAL_GUIDE.md) for a deeper, source-bounded comparison and limitations.
 
-## Limitations and security notes
-
-- The health score is a simple status mapping and arithmetic average; it is not an SLA/uptime calculation.
-- The recovery policy only supports actions implemented in the current code; it cannot repair arbitrary application failures.
-- No machine-learning or predictive failure detection is implemented.
-- Kafka, Billing, Notifications, and Analytics are not all part of the default runtime.
-- The HealOps API authentication boundary and MediFlow route protections are limited in the current source. Keep the project on a trusted local network until route authorization, secrets, and operational APIs are reviewed and secured.
-- H2 and local Compose are convenient for development and demonstration. Production operation requires a deliberate database, backup/restore, security, observability, and availability design.
-- No live runtime certification is implied by this README.
-
+ 
 ## Project structure
 
 ```text
