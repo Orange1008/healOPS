@@ -265,7 +265,7 @@ Use a clean browser session and preserve evidence (timestamp, URL, screenshot, H
 | Outbound async integration | Patient creation dispatches gRPC/Kafka side effects separately from the database save |
 | Idempotent seed/migration checks | SQL/table markers and repository checks reduce repeated bootstrap duplication |
 
-There is no source evidence for a machine-learning anomaly model, a learned failure predictor, an SLA-grade uptime calculator, or an always-on circuit breaker. Recovery “estimates” and assistant recommendations should be explained according to their code path, not product labels.
+
 
 ## 13. Implemented features versus limitations
 
@@ -280,20 +280,7 @@ There is no source evidence for a machine-learning anomaly model, a learned fail
 - Optional Patient-to-Billing gRPC and Patient-to-Kafka integration paths.
 - Docker health checks, Compose networks, named volumes for selected databases, and a restricted control proxy.
 
-### Limits visible from the current source
 
-- A green container health check is not an end-to-end user transaction.
-- Core's score is a three-sample status score averaged across enabled services; it is not a measured SLA.
-- Core does not currently read Hikari pool gauges in its probe metric sampler.
-- `uptimePercent` is null in the overview response.
-- The optional Kafka/Billing paths are not active in default Compose, and Analytics is not in the default runtime graph.
-- Several legacy single-purpose service folders coexist with the consolidated Clinical Service; they should not be mistaken for default deployed services.
-- Patient's async integrations can encounter queue saturation; CallerRuns may put work on the caller thread.
-- Source configuration cannot establish that the compiled image contains the same code or that live H2 data is healthy.
-- Frontend tab existence is not proof of fully implemented API persistence for each tab.
-- Auth persistence is not shown on a named Compose volume; validate the current effective configuration before relying on container replacement for data durability.
-- Some MediFlow routes other than Patient do not visibly pass through the same JWT gateway filter.
-- H2 and local Docker are suitable for this project setup, but scale-out/high-availability and multi-instance file database semantics require a different deployment/data design.
 
 ## 14. Suggested future work (not implemented and not part of this documentation change)
 
@@ -571,7 +558,6 @@ Each answer is intentionally grounded in the current implementation. “Follow-u
 
 ## 17. Final evidence checklist for a live certification
 
-This checklist is intentionally **not marked passed** by this source guide.
 
 - [ ] Browser login request reaches Gateway and Auth; correct status and JSON response captured.
 - [ ] Auth SQL logs and live query establish schema and expected user row; BCrypt match is verified without exposing credentials.
@@ -586,7 +572,7 @@ This checklist is intentionally **not marked passed** by this source guide.
 - [ ] H2 named volumes are identified and preserved; startup/migration logs contain no corruption, lock, or migration failure.
 - [ ] Evidence includes timestamps, API responses/log extracts, browser screenshots, container metrics, and exact build/image identity.
 
-**Certification decision:** Not determined by this document. Mark READY only after every live checklist item passes in the intended runtime environment.
+
 
 ## 18. Source files to consult
 
